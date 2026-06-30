@@ -1,3 +1,5 @@
+import 'package:device_preview/device_preview.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -29,7 +31,12 @@ Future<void> main() async {
 
   await _requestPermissions();
 
-  runApp(const KangueApp());
+  runApp(
+    DevicePreview(
+      enabled: kDebugMode,
+      builder: (_) => const KangueApp(),
+    ),
+  );
 }
 
 Future<void> _requestPermissions() async {
@@ -63,6 +70,7 @@ class KangueApp extends StatelessWidget {
           bodyMedium: TextStyle(color: kTextColor, fontSize: kFontSizeSmall),
         ),
       ),
+      locale: DevicePreview.locale(context),
       builder: (context, child) {
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(
