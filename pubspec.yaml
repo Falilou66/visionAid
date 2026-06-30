@@ -1,0 +1,50 @@
+name: kangue_app
+description: "Kangue - Assistant vocal pour personnes malvoyantes"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # IA Gemini
+  google_generative_ai: ^0.4.6
+
+  # Voix
+  flutter_tts: ^4.2.0
+  speech_to_text: ^7.0.0
+
+  # Caméra / Scanner
+  camera: ^0.11.1+2
+  image_picker: ^1.1.2
+
+  # Permissions
+  permission_handler: ^11.3.1
+
+  # Lancer des apps (Android Intents)
+  android_intent_plus: ^5.1.0
+
+  # Notifications
+  flutter_local_notifications: ^18.0.1
+
+  # Vibration / retour haptique
+  vibration: ^2.0.0
+
+  # Utilitaires
+  flutter_dotenv: ^5.2.1
+  shared_preferences: ^2.5.3
+  path_provider: ^2.1.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
