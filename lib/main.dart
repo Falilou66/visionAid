@@ -14,7 +14,6 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -22,14 +21,27 @@ Future<void> main() async {
     ),
   );
 
-  await dotenv.load(fileName: '.env');
+  // Chargement sécurisé du .env
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {}
   final apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
 
   GeminiService().init(apiKey);
-  await TtsService().init();
-  await NotificationService().init();
 
-  await _requestPermissions();
+  // Ces services peuvent ne pas être disponibles sur Linux/web
+  try {
+    await TtsService().init();
+  } catch (_) {}
+  try {
+    await NotificationService().init();
+  } catch (_) {}
+
+  // Les permissions ne sont disponibles que sur mobile
+  if (defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS) {
+    await _requestPermissions();
+  }
 
   runApp(
     DevicePreview(
@@ -56,6 +68,9 @@ class KangueApp extends StatelessWidget {
     return MaterialApp(
       title: 'Kangue',
       debugShowCheckedModeBanner: false,
+      locale: DevicePreview.locale(context),
+      // DevicePreview.appBuilder injecte le device frame + les bonnes MediaQuery
+      builder: DevicePreview.appBuilder,
       theme: ThemeData(
         colorScheme: const ColorScheme.dark(
           primary: kPrimaryColor,
@@ -70,17 +85,6 @@ class KangueApp extends StatelessWidget {
           bodyMedium: TextStyle(color: kTextColor, fontSize: kFontSizeSmall),
         ),
       ),
-      locale: DevicePreview.locale(context),
-      builder: (context, child) {
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.linear(
-              MediaQuery.of(context).textScaler.scale(1.0).clamp(1.0, 1.4),
-            ),
-          ),
-          child: child!,
-        );
-      },
       home: const HomeScreen(),
     );
   }
