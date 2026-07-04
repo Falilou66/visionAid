@@ -11,8 +11,8 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
 
-  # IA Gemini
-  google_generative_ai: ^0.4.6
+  # IA Groq
+  http: ^1.2.0
 
   # Voix
   flutter_tts: ^4.2.0
@@ -22,10 +22,8 @@ dependencies:
   camera: ^0.11.1+2
   image_picker: ^1.1.2
 
-  # Permissions
-  permission_handler: ^11.3.1
-
-  # Lancer des apps (Android Intents)
+  # Lancer des apps
+  url_launcher: ^6.3.0
   android_intent_plus: ^5.1.0
 
   # Notifications
@@ -38,7 +36,6 @@ dependencies:
   flutter_dotenv: ^5.2.1
   shared_preferences: ^2.5.3
   path_provider: ^2.1.5
-  device_preview: ^1.2.0
 
 dev_dependencies:
   flutter_test:

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_tts/flutter_tts.dart';
 
 class TtsService {
@@ -12,6 +13,21 @@ class TtsService {
   bool get isSpeaking => _isSpeaking;
 
   Future<void> init() async {
+    if (Platform.isIOS) {
+      // Jouer via le haut-parleur même si le téléphone est en mode silencieux
+      await _tts.setSharedInstance(true);
+      await _tts.setIosAudioCategory(
+        IosTextToSpeechAudioCategory.playback,
+        [
+          IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
+          IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+          IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+          IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+        ],
+        IosTextToSpeechAudioMode.defaultMode,
+      );
+    }
+
     await _tts.setLanguage(_currentLanguage);
     await _tts.setSpeechRate(0.45);
     await _tts.setVolume(1.0);

@@ -1,12 +1,10 @@
-import 'package:device_preview/device_preview.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'services/gemini_service.dart';
 import 'services/tts_service.dart';
 import 'services/notification_service.dart';
+import 'services/background_service.dart';
 import 'screens/home_screen.dart';
 import 'utils/constants.dart';
 
@@ -21,15 +19,16 @@ Future<void> main() async {
     ),
   );
 
-  // Chargement sécurisé du .env
   try {
     await dotenv.load(fileName: '.env');
   } catch (_) {}
-  final apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
 
+  final apiKey = dotenv.env['GROQ_API_KEY'] ?? '';
   GeminiService().init(apiKey);
 
-  // Ces services peuvent ne pas être disponibles sur Linux/web
+  // Store API key in SharedPreferences for the native background service
+  await BackgroundService().init(apiKey);
+
   try {
     await TtsService().init();
   } catch (_) {}
@@ -37,27 +36,7 @@ Future<void> main() async {
     await NotificationService().init();
   } catch (_) {}
 
-  // Les permissions ne sont disponibles que sur mobile
-  if (defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS) {
-    await _requestPermissions();
-  }
-
-  runApp(
-    DevicePreview(
-      enabled: kDebugMode,
-      builder: (_) => const KangueApp(),
-    ),
-  );
-}
-
-Future<void> _requestPermissions() async {
-  await [
-    Permission.microphone,
-    Permission.camera,
-    Permission.notification,
-    Permission.speech,
-  ].request();
+  runApp(const KangueApp());
 }
 
 class KangueApp extends StatelessWidget {
@@ -68,9 +47,6 @@ class KangueApp extends StatelessWidget {
     return MaterialApp(
       title: 'Kangue',
       debugShowCheckedModeBanner: false,
-      locale: DevicePreview.locale(context),
-      // DevicePreview.appBuilder injecte le device frame + les bonnes MediaQuery
-      builder: DevicePreview.appBuilder,
       theme: ThemeData(
         colorScheme: const ColorScheme.dark(
           primary: kPrimaryColor,
