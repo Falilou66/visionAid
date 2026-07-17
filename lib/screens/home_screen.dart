@@ -6,6 +6,7 @@ import '../services/tts_service.dart';
 import '../services/stt_service.dart';
 import '../services/app_launcher_service.dart';
 import '../services/background_service.dart';
+import '../services/notification_service.dart';
 import '../utils/constants.dart';
 import '../widgets/accessible_button.dart';
 import 'scanner_screen.dart';
@@ -34,7 +35,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // Android background service state
   bool _serviceRunning = false;
   bool _a11yEnabled = false;
+  bool _handsFree = false;
   StreamSubscription<String>? _cmdSub;
+  StreamSubscription<String>? _screenSub;
 
   // ─── Init ─────────────────────────────────────────────────────────────────
 
@@ -42,8 +45,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initServices();
-    if (Platform.isAndroid) _initAndroid();
+    _boot();
+  }
+
+  /// Boots sequentially so the always-on mic is armed **after** the greeting has
+  /// finished speaking. Arming it during the greeting made the mic hear Kangue's
+  /// own voice, mistake it for a wake word, and spiral into a TTS↔recogniser loop.
+  Future<void> _boot() async {
+    await _initServices();
+    if (Platform.isAndroid) await _initAndroid();
   }
 
   Future<void> _initServices() async {
@@ -51,19 +61,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await Future.delayed(const Duration(milliseconds: 500));
     await _tts.speak(
       'Bonjour ! Je suis Kangue, votre assistant. '
-      'Appuyez sur le grand bouton orange pour me parler.',
+      'Vous n\'avez pas besoin de toucher l\'écran : '
+      'dites simplement « Jarvis » suivi de votre demande.',
     );
   }
 
   Future<void> _initAndroid() async {
-    _serviceRunning = await _bgService.isRunning();
     _a11yEnabled = await _bgService.isAccessibilityEnabled();
+
+    // Auto-start the background listening service so the mic is always available
+    // without the user having to find and tap a chip.
+    _serviceRunning = await _bgService.isRunning();
+    if (!_serviceRunning) {
+      // Android 13+ requires runtime permission for the service notification.
+      await NotificationService().requestPermission();
+      _serviceRunning = await _bgService.start();
+    }
+
+    // Arm the always-on, wake-word-gated hands-free loop.
+    await _bgService.startContinuous();
+    _handsFree = await _bgService.isHandsFree();
     if (mounted) setState(() {});
 
-    // Listen for commands coming from the background notification buttons
-    _cmdSub = _bgService.commandStream.listen((command) {
-      if (mounted && !_isProcessing) _processCommand(command);
-    });
+    // Voice commands captured natively (wake word « Jarvis » already stripped).
+    _cmdSub = _bgService.commandStream.listen(_onVoiceCommand);
+
+    // Spoken announcement each time the user opens a different app.
+    _screenSub = _bgService.screenChangeStream.listen(_announceScreen);
+  }
+
+  /// Routes a native voice command, handling the bare wake word specially and
+  /// letting [_processCommand] guard the mic while Kangue speaks.
+  Future<void> _onVoiceCommand(String command) async {
+    if (!mounted || _isProcessing) return;
+    if (command == '__wake__') {
+      await _bgService.pauseListening();
+      await _tts.speak('Oui, je vous écoute ?');
+      await _bgService.resumeListening();
+      return;
+    }
+    await _processCommand(command);
+  }
+
+  /// Speaks the name of a newly-opened app, without interrupting a command.
+  Future<void> _announceScreen(String appLabel) async {
+    if (!mounted || _isProcessing || _isListening) return;
+    await _bgService.pauseListening();
+    try {
+      await _tts.speak(appLabel);
+    } finally {
+      await _bgService.resumeListening();
+    }
   }
 
   @override
@@ -76,7 +124,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _refreshAndroidState() async {
     final running = await _bgService.isRunning();
     final a11y = await _bgService.isAccessibilityEnabled();
-    if (mounted) setState(() { _serviceRunning = running; _a11yEnabled = a11y; });
+    final handsFree = await _bgService.isHandsFree();
+    if (mounted) {
+      setState(() {
+        _serviceRunning = running;
+        _a11yEnabled = a11y;
+        _handsFree = handsFree;
+      });
+    }
   }
 
   // ─── Voice recognition ────────────────────────────────────────────────────
@@ -95,12 +150,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _lastCommand = '';
     });
 
+    // Yield the mic: the always-on native loop must not compete with the
+    // in-app recogniser for the microphone.
+    await _bgService.pauseListening();
+
     await _stt.listen(
       localeId: 'fr_FR',
       onListenStart: () => setState(() => _isListening = true),
       onResult: (text) async {
         if (text.isEmpty) {
           setState(() { _isListening = false; _statusText = 'Rien entendu. Réessayez.'; });
+          await _bgService.resumeListening();
           return;
         }
         await _processCommand(text);
@@ -116,14 +176,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _statusText = 'Traitement...';
     });
 
-    final intent = await _gemini.parseVoiceCommand(command);
-    await _executeIntent(intent);
+    // Keep the always-on mic muted for the whole turn so it never captures
+    // Kangue's own spoken answer (which would loop back as a fake command).
+    await _bgService.pauseListening();
 
-    setState(() {
-      _isProcessing = false;
-      _lastResponse = intent.response;
-      _statusText = 'Appuyez sur le micro pour parler';
-    });
+    String response = '';
+    try {
+      final intent = await _gemini.parseVoiceCommand(command);
+      await _executeIntent(intent);
+      response = intent.response;
+    } finally {
+      setState(() {
+        _isProcessing = false;
+        _lastResponse = response;
+        _statusText = _handsFree
+            ? 'Dites « Jarvis » pour me parler'
+            : 'Appuyez sur le micro pour parler';
+      });
+      // Resume hands-free listening now that Kangue has finished speaking.
+      await _bgService.resumeListening();
+    }
   }
 
   // ─── Intent execution ─────────────────────────────────────────────────────
@@ -203,6 +275,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               MaterialPageRoute(builder: (_) => const ScannerScreen(autoCapture: true)));
         }
 
+      case 'scan_document':
+        await _tts.speak(
+          'J\'ouvre le scanner. Placez le document devant la caméra, '
+          'je vais le lire.',
+        );
+        if (mounted) {
+          Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const ScannerScreen(autoCapture: true)));
+        }
+
       case 'read_screen':
         await _readScreenContent();
 
@@ -213,7 +295,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       case 'help':
         const helpText =
-            'Je peux vous aider à : appeler quelqu\'un, envoyer un message WhatsApp, '
+            'Je peux vous aider à : ouvrir une application comme TikTok, WhatsApp ou Messenger, '
+            'appeler quelqu\'un, envoyer un message, '
             'donner l\'heure, la météo, répondre à vos questions, '
             'faire des calculs, traduire, décrire ce qui est devant vous, '
             'scanner un document, ou lire l\'écran de votre téléphone. '
@@ -271,18 +354,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   // ─── Android service controls ─────────────────────────────────────────────
 
-  Future<void> _toggleBackgroundService() async {
-    if (_serviceRunning) {
-      await _bgService.stop();
-      setState(() => _serviceRunning = false);
-      await _tts.speak('Service d\'arrière-plan arrêté.');
+  Future<void> _toggleHandsFree() async {
+    if (_handsFree) {
+      await _bgService.stopContinuous();
+      setState(() => _handsFree = false);
+      await _tts.speak('Écoute mains libres désactivée.');
     } else {
-      final ok = await _bgService.start();
-      setState(() => _serviceRunning = ok);
-      if (ok) {
+      await _bgService.startContinuous();
+      final on = await _bgService.isHandsFree();
+      setState(() { _handsFree = on; _serviceRunning = true; });
+      if (on) {
         await _tts.speak(
-          'Service activé. Une notification apparaît dans votre barre. '
-          'Appuyez sur Parler pour me parler sans ouvrir l\'app.',
+          'Écoute mains libres activée. Dites « Jarvis » suivi de votre demande, '
+          'sans toucher l\'écran.',
         );
       }
     }
@@ -435,13 +519,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          // Background service toggle
+          // Hands-free (always-on wake-word listening) toggle
           Expanded(
             child: _AndroidChip(
-              icon: _serviceRunning ? Icons.hearing : Icons.hearing_disabled,
-              label: _serviceRunning ? 'Service actif' : 'Service inactif',
-              active: _serviceRunning,
-              onTap: _toggleBackgroundService,
+              icon: _handsFree ? Icons.record_voice_over : Icons.voice_over_off,
+              label: _handsFree ? 'Mains libres ON' : 'Mains libres OFF',
+              active: _handsFree,
+              onTap: _toggleHandsFree,
             ),
           ),
           const SizedBox(width: 8),
@@ -562,6 +646,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _cmdSub?.cancel();
+    _screenSub?.cancel();
     _tts.stop();
     _stt.stop();
     super.dispose();

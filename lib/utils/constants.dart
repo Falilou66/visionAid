@@ -16,8 +16,14 @@ const kSupportedLanguages = {
   'English': 'en-US',
 };
 
+// Map nom parlé -> package. `launchByName` fait un `contains`, donc les alias
+// (« messenger », « facebook messenger »…) pointent vers le même package.
+// NB: en dernier recours, si le package n'est pas trouvé, `launchByName`
+// tente une résolution par libellé via le PackageManager (voir le service).
 const kKnownApps = {
   'whatsapp': 'com.whatsapp',
+  'messenger': 'com.facebook.orca',
+  'facebook messenger': 'com.facebook.orca',
   'facebook': 'com.facebook.katana',
   'chrome': 'com.android.chrome',
   'appareil photo': 'com.android.camera2',
@@ -35,4 +41,17 @@ const kKnownApps = {
   'instagram': 'com.instagram.android',
   'twitter': 'com.twitter.android',
   'telegram': 'org.telegram.messenger',
+  'tiktok': 'com.zhiliaoapp.musically',
+  'tik tok': 'com.zhiliaoapp.musically',
+  'snapchat': 'com.snapchat.android',
+  'snap': 'com.snapchat.android',
+  'spotify': 'com.spotify.music',
+  'netflix': 'com.netflix.mediaclient',
+  'linkedin': 'com.linkedin.android',
+  'photos': 'com.google.android.apps.photos',
+  'contacts': 'com.android.contacts',
+  'horloge': 'com.google.android.deskclock',
+  'calendrier': 'com.google.android.calendar',
+  'zoom': 'us.zoom.videomeetings',
+  'google': 'com.google.android.googlequicksearchbox',
 };

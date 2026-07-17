@@ -3,6 +3,7 @@ package com.kangue.kangue_app
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
@@ -34,11 +35,41 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                     "isRunning" -> result.success(KangueBackgroundService.isRunning)
+                    "isHandsFree" -> result.success(KangueBackgroundService.isHandsFree)
                     "triggerListen" -> {
-                        val intent = Intent(this, KangueBackgroundService::class.java)
-                            .apply { action = KangueBackgroundService.ACTION_START_LISTENING }
-                        startService(intent)
+                        sendServiceAction(KangueBackgroundService.ACTION_START_LISTENING)
                         result.success(true)
+                    }
+                    "startContinuous" -> {
+                        // Ensure the service exists, then arm the hands-free loop.
+                        startBgService()
+                        sendServiceAction(KangueBackgroundService.ACTION_START_CONTINUOUS)
+                        result.success(true)
+                    }
+                    "stopContinuous" -> {
+                        sendServiceAction(KangueBackgroundService.ACTION_STOP_CONTINUOUS)
+                        result.success(true)
+                    }
+                    "pauseListening" -> {
+                        sendServiceAction(KangueBackgroundService.ACTION_PAUSE)
+                        result.success(true)
+                    }
+                    "resumeListening" -> {
+                        sendServiceAction(KangueBackgroundService.ACTION_RESUME)
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        // ── App launcher channel ────────────────────────────────────────────
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.kangue/launcher")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "launchApp" -> {
+                        val name = call.argument<String>("name") ?: ""
+                        val pkg = call.argument<String>("package")
+                        result.success(launchApp(name, pkg))
                     }
                     else -> result.notImplemented()
                 }
@@ -53,7 +84,7 @@ class MainActivity : FlutterActivity() {
                         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         result.success(true)
                     }
-                    "getScreenText"     -> result.success(KangueAccessibilityService.capturedScreenText)
+                    "getScreenText"     -> result.success(KangueAccessibilityService.readActiveScreen())
                     "getCurrentPackage" -> result.success(KangueAccessibilityService.currentPackageName)
                     else                -> result.notImplemented()
                 }
@@ -71,6 +102,66 @@ class MainActivity : FlutterActivity() {
                     KangueBackgroundService.onCommandReceived = null
                 }
             })
+
+        // ── Event channel: app-change announcements from a11y service → Flutter
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "com.kangue/screen")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    KangueAccessibilityService.onScreenChanged = { appLabel ->
+                        runOnUiThread { events?.success(appLabel) }
+                    }
+                }
+                override fun onCancel(arguments: Any?) {
+                    KangueAccessibilityService.onScreenChanged = null
+                }
+            })
+    }
+
+    /**
+     * Launches an app, preferring the known [pkg] but falling back to matching an
+     * installed app by its display label ([name]) — so voice commands like
+     * "ouvre TikTok" work even when the hard-coded package is wrong or missing.
+     * Returns false only when nothing could be resolved/launched.
+     */
+    private fun launchApp(name: String, pkg: String?): Boolean {
+        val pm = packageManager
+        // 1. Try the provided package directly.
+        if (!pkg.isNullOrBlank()) {
+            launchPackage(pm, pkg)?.let { startActivity(it); return true }
+        }
+        // 2. Fall back to resolving an installed app by its (localized) label.
+        val query = name.lowercase().trim()
+        if (query.isEmpty()) return false
+        val apps = try {
+            pm.getInstalledApplications(PackageManager.GET_META_DATA)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        // Exact label match wins; otherwise the first launchable "contains" match.
+        var contains: String? = null
+        for (app in apps) {
+            val label = pm.getApplicationLabel(app).toString().lowercase()
+            if (label == query && launchPackage(pm, app.packageName) != null) {
+                launchPackage(pm, app.packageName)?.let { startActivity(it); return true }
+            }
+            if (contains == null && (label.contains(query) || query.contains(label)) &&
+                label.isNotBlank() && launchPackage(pm, app.packageName) != null
+            ) {
+                contains = app.packageName
+            }
+        }
+        contains?.let { launchPackage(pm, it)?.let { i -> startActivity(i); return true } }
+        return false
+    }
+
+    private fun launchPackage(pm: PackageManager, pkg: String): Intent? =
+        pm.getLaunchIntentForPackage(pkg)?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+
+    private fun sendServiceAction(action: String) {
+        val intent = Intent(this, KangueBackgroundService::class.java).apply {
+            this.action = action
+        }
+        startService(intent)
     }
 
     private fun startBgService() {

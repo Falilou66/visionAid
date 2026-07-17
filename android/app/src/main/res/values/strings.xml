@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">Permet à Kangue de lire à voix haute le contenu affiché dans les autres applications (articles, messages, e-mails) pour les personnes malvoyantes.</string>
+</resources>

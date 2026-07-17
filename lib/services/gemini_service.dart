@@ -56,8 +56,8 @@ Analyse cette commande vocale: "$command"
 
 Réponds UNIQUEMENT avec ce JSON:
 {
-  "action": "open_app|send_message|make_call|get_time|get_weather|answer_question|describe_surroundings|set_reminder|calculate|translate|get_battery|help|read_screen|unknown",
-  "app": "whatsapp|telegram|sms|instagram|youtube|maps|null",
+  "action": "open_app|send_message|make_call|get_time|get_weather|answer_question|describe_surroundings|scan_document|set_reminder|calculate|translate|get_battery|help|read_screen|unknown",
+  "app": "nom de l'application à ouvrir (ex: whatsapp, tiktok, messenger, instagram, youtube, snapchat, spotify…) ou null",
   "target": "destinataire, contact, ou sujet principal ou null",
   "message": "texte du message ou null",
   "query": "question ou calcul ou texte à traduire ou null",
@@ -71,6 +71,8 @@ Règles:
 - Pour "quelle heure" → action: get_time
 - Pour "météo" ou "temps qu'il fait" → action: get_weather
 - Pour "décris ce que tu vois" ou "qu'est-ce qu'il y a devant moi" → action: describe_surroundings
+- Pour "scanne un document", "scanne ce papier", "lis ce document", "scanne ma facture" → action: scan_document
+- Pour "ouvre X", "lance X", "démarre X" (où X est une application: tiktok, whatsapp, messenger, instagram…) → action: open_app, app: X
 - Pour "rappelle-moi de X" ou "alarme à X heures" → action: set_reminder, query: le rappel
 - Pour calcul → action: calculate, query: le calcul
 - Pour "lis-moi cet article", "lis l'écran", "que dit l'écran", "lis ce texte", "lis ce que tu vois sur l'écran" → action: read_screen
@@ -86,6 +88,9 @@ Exemples:
 - "dis à Cheikh sur whatsapp envoie-moi le cours" → action:send_message, app:"whatsapp", target:"Cheikh", message:"Envoie-moi le cours d hier"
 - "quel temps fait-il" → action:get_weather
 - "décris ce qu'il y a devant moi" → action:describe_surroundings
+- "ouvre TikTok" → action:open_app, app:"tiktok"
+- "lance Messenger" → action:open_app, app:"messenger"
+- "scanne ce document" → action:scan_document
 ''';
 
     try {

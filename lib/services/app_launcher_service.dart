@@ -1,6 +1,5 @@
 import 'dart:io';
-import 'package:android_intent_plus/android_intent.dart';
-import 'package:android_intent_plus/flag.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../utils/constants.dart';
 
@@ -9,9 +8,12 @@ class AppLauncherService {
   factory AppLauncherService() => _instance;
   AppLauncherService._internal();
 
+  static const MethodChannel _launcher = MethodChannel('com.kangue/launcher');
+
   // Ouvre une app par son nom
   Future<bool> launchByName(String appName) async {
     final normalized = appName.toLowerCase().trim();
+    if (normalized.isEmpty) return false;
 
     if (Platform.isIOS) {
       final url = _iosUrlForApp(normalized);
@@ -19,7 +21,9 @@ class AppLauncherService {
       return _launch(url);
     }
 
-    // Android
+    // Android: look up a known package, then let the native side launch it —
+    // it uses getLaunchIntentForPackage and, if the package is wrong/missing,
+    // falls back to matching an installed app by its visible label.
     String? packageName;
     for (final entry in kKnownApps.entries) {
       if (normalized.contains(entry.key)) {
@@ -27,14 +31,12 @@ class AppLauncherService {
         break;
       }
     }
-    if (packageName == null) return false;
     try {
-      await AndroidIntent(
-        action: 'android.intent.action.MAIN',
-        package: packageName,
-        flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
-      ).launch();
-      return true;
+      return await _launcher.invokeMethod<bool>(
+            'launchApp',
+            {'name': normalized, 'package': packageName},
+          ) ??
+          false;
     } catch (_) {
       return false;
     }

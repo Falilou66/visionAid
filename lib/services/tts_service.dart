@@ -28,6 +28,12 @@ class TtsService {
       );
     }
 
+    // Make `await speak(...)` block until the utterance actually finishes.
+    // The whole hands-free anti-feedback design depends on this: callers pause
+    // the mic, speak, then resume — if speak() returned before the audio ended,
+    // the mic would reopen while Kangue is still talking and loop on its own TTS.
+    await _tts.awaitSpeakCompletion(true);
+
     await _tts.setLanguage(_currentLanguage);
     await _tts.setSpeechRate(0.45);
     await _tts.setVolume(1.0);
